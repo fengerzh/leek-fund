@@ -4,16 +4,18 @@
  *  Github: https://github.com/giscafer
  *-------------------------------------------------------------*/
 
-import { ConfigurationChangeEvent, ExtensionContext, window, workspace, TreeView } from 'vscode';
+import { ConfigurationChangeEvent, ExtensionContext, TreeView, window, workspace } from 'vscode';
+import global from './global';
+import { SortType } from './leekTreeItem';
 import { registerViewEvent } from './registerEvent';
 import { LeekFundService } from './service';
 import { isStockTime } from './utils';
 import { FundProvider } from './views/fundProvider';
 import { LeekFundModel } from './views/model';
+import { NewsProvider } from './views/newsProvider';
 import { StatusBar } from './views/statusBar';
 import { StockProvider } from './views/stockProvider';
-import { SortType } from './leekTreeItem';
-import { NewsProvider } from './views/newsProvider';
+import { updateAmount } from './webview/setAmount';
 
 let intervalTimer: NodeJS.Timer | null = null;
 let fundTreeView: TreeView<any> | null = null;
@@ -27,6 +29,9 @@ export function activate(context: ExtensionContext) {
 
   let intervalTime = 3000;
   const model = new LeekFundModel();
+  setGlobalVariable(model);
+  updateAmount(model);
+
   const fundService = new LeekFundService(context, model);
   const nodeFundProvider = new FundProvider(fundService);
   const nodeStockProvider = new StockProvider(fundService);
@@ -43,7 +48,7 @@ export function activate(context: ExtensionContext) {
   stockTreeView = window.createTreeView('leekFundView.stock', {
     treeDataProvider: nodeStockProvider,
   });
-  stockTreeView = window.createTreeView('leekFundView.news', {
+  window.createTreeView('leekFundView.news', {
     treeDataProvider: newsProvider,
   });
 
@@ -92,6 +97,7 @@ export function activate(context: ExtensionContext) {
   workspace.onDidChangeConfiguration((e: ConfigurationChangeEvent) => {
     console.log('🐥>>>Configuration changed');
     setIntervalTime();
+    setGlobalVariable(model);
     nodeFundProvider.refresh();
     nodeStockProvider.refresh();
     newsProvider.refresh();
@@ -100,6 +106,15 @@ export function activate(context: ExtensionContext) {
 
   // register event
   registerViewEvent(context, fundService, nodeFundProvider, nodeStockProvider, newsProvider);
+}
+
+function setGlobalVariable(model: LeekFundModel) {
+  const iconType = model.getCfg('leek-fund.iconType') || 'arrow';
+  global.iconType = iconType;
+  const fundAmount = model.getCfg('leek-fund.fundAmount') || {};
+  global.fundAmount = fundAmount;
+  const showEarnings = model.getCfg('leek-fund.showEarnings');
+  global.showEarnings = showEarnings;
 }
 
 // this method is called when your extension is deactivated

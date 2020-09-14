@@ -6,15 +6,45 @@
 
 import { ViewColumn } from 'vscode';
 import ReusedWebviewPanel from '../ReusedWebviewPanel';
-import { xuqiuArticleTemp } from '../utils';
+import global from '../global';
+import { NewsService } from '../views/newsService';
+import { formatDateTime } from '../utils';
 
-async function openNews(userName: string, newsList = [], hideAvatar = false) {
+async function openNews(
+  newsService: NewsService,
+  userId: string,
+  userName: string,
+  hideAvatar = false
+) {
   const panel = ReusedWebviewPanel.create('newsWebview', `News(${userName})`, ViewColumn.One, {
     enableScripts: true,
     retainContextWhenHidden: true,
   });
-  const newsListHTML = xuqiuArticleTemp(newsList, hideAvatar);
-  panel.webview.html = `
+
+  const updateWebview = async () => {
+    const newsList: any | never = await newsService.getNewsData(userId);
+    const newsListHTML = xuqiuArticleTemp(newsList, hideAvatar);
+    panel.webview.html = getWebviewContent(newsListHTML);
+    console.log('updateWebview');
+  };
+  updateWebview();
+
+  // And schedule updates to the content every 20 seconds
+  if (global.newsIntervalTimer) {
+    clearInterval(global.newsIntervalTimer);
+    global.newsIntervalTimer = null;
+  }
+  global.newsIntervalTimer = setInterval(updateWebview, global.newsIntervalTime);
+
+  panel.onDidDispose(() => {
+    // When the panel is closed, cancel any future updates to the webview content
+    clearInterval(global.newsIntervalTimer);
+    global.newsIntervalTimer = null;
+  }, null);
+}
+
+function getWebviewContent(newsListHTML: string[] = []) {
+  return `
   <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -192,18 +222,88 @@ async function openNews(userName: string, newsList = [], hideAvatar = false) {
         width: 48px;
         height: 48px;
       }
+      .timer{
+        position: fixed;
+        top:10px;
+        right:10px;
+        font-size:12px;
+        color:#888;
+      }
     </style>
   </head>
   <body>
     <div class="profiles__timeline__bd">
+      <span class="timer">数据时间：${formatDateTime(new Date())}</span>
       ${newsListHTML.join('\n')}
     </div>
-    <div style="width: 200px; margin: 10px auto">
-        <p>----只展示最新10条信息----</p>
+    <div style="width: 230px; margin: 10px auto">
+        <p style="color:#888">----最新10条信息(每20s自动刷新)----</p>
       </div>
   </body>
 </html>
 `;
+}
+
+function xuqiuArticleTemp(newsList = [], hideAvatar = false) {
+  const htmlArr = [];
+  for (let article of newsList) {
+    const info = article as any;
+    info.userId = info.user.id;
+    const images = info.user.profile_image_url.split(',');
+    const img = `https:${info.user.photo_domain}${images[images.length - 1]}`;
+    const description = info.description.replace(/\/\/assets/g, 'https://assets');
+
+    let articleStr = `
+    <article class="timeline__item">
+        ${
+          hideAvatar
+            ? ''
+            : `<a
+        href="https://xueqiu.com/${info.userId}"
+        target="_blank"
+        data-tooltip="${info.userId}"
+        class="avatar avatar-md"
+        ><img
+          src="${img}"
+      /></a>`
+        }
+        <div class="timeline__item__top__right"></div>
+        <div class="timeline__item__main" ${hideAvatar ? 'style="margin-left:0;"' : ''}>
+          <div class="timeline__item__info">
+            <div>
+              <a
+                href="https://xueqiu.com/${info.userId}"
+                target="_blank"
+                data-tooltip="${info.userId}"
+                class="user-name"
+                >${info.user.screen_name}</a
+              >
+            </div>
+            <a
+              href="https://xueqiu.com/${info.userId}/${info.id}"
+              target="_blank"
+              data-id="157971116"
+              class="date-and-source"
+              >${info.timeBefore} · 来自${info.source}</a
+            >
+          </div>
+          <div class="timeline__item__bd">
+            <div class="timeline__item__content">
+              <!---->
+              <div class="content content--description">
+                <!---->
+                <div class="">
+                  ${description}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+      `;
+    htmlArr.push(articleStr);
+  }
+  return htmlArr;
 }
 
 export default openNews;

@@ -1,8 +1,50 @@
-import { QuickPickItem } from 'vscode';
+import { QuickPickItem, ExtensionContext, Uri } from 'vscode';
 import { LeekTreeItem, SortType } from './leekTreeItem';
+const path = require('path');
+const fs = require('fs');
 
 export const XUEQIU_COOKIE =
   'device_id=24700f9f1986800ab4fcc880530dd0ed; s=cx138g8av1; bid=5cce4e0c90209ffea928b627443f39fa_kc956qys; __utmz=1.1593957579.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _ga=GA1.2.2075969626.1594306349; acw_tc=2760823815987068844221229e39eeead45f769900257a8764f721b5ad8125; xq_a_token=4db837b914fc72624d814986f5b37e2a3d9e9944; xqat=4db837b914fc72624d814986f5b37e2a3d9e9944; xq_r_token=2d6d6cc8e57501dfe571d2881cabc6a5f2542bf8; xq_id_token=eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJ1aWQiOi0xLCJpc3MiOiJ1YyIsImV4cCI6MTYwMDQ4MzAwNywiY3RtIjoxNTk4NzA2ODc4NTQ3LCJjaWQiOiJkOWQwbjRBWnVwIn0.KfVaRDSamj2Sp9UnHqMvM6s5fLnLKvGAYqupbDcjtyHb2cpPSwL6GH3QIc97WqajR1jNQjKklRgcHy6Ep4VcwHRbydqioj7ZCNSCU1hDtnoMb8kTm7wK4dWB9TOakhRw85dpXpCcXe7GSbdGWziNEY-knZppxuMl5oUKGnx8vrGT_5DZII8UdyZuixyiZ8E_2gu3ggGrxTT6MAziQrTNxrFALKBRJgQeRPLe0iK5F-MG1PB_2fphP_9IruQpERJ-w6YLgDBXfplbFL32BkIW2FV4HWbZonpBdcMYN4STPM6qA6l3C7Pzkg0E-x_RIc4jdhwVSvIiMCa-h-sVE-dYyw; u=681598706884429; Hm_lvt_1db88642e346389874251b5a1eded6e3=1598706886; __utma=1.339782325.1593957579.1593957579.1598706894.2; __utmc=1; __utmt=1; __utmb=1.1.10.1598706894; Hm_lpvt_1db88642e346389874251b5a1eded6e3=1598706974';
+
+const formatNum = (n: number) => {
+  const m = n.toString();
+  return m[1] ? m : '0' + m;
+};
+
+export const objectToQueryString = (queryParameters: Object): string => {
+  return queryParameters
+    ? Object.entries(queryParameters).reduce((queryString, [key, val], index) => {
+        const symbol = queryString.length === 0 ? '?' : '&';
+        queryString += typeof val !== 'object' ? `${symbol}${key}=${val}` : '';
+        return queryString;
+      }, '')
+    : '';
+};
+
+export const formatDate = (date: Date, seperator = '-') => {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+
+  return [year, month, day].map(formatNum).join(seperator);
+};
+
+// 时间格式化
+export const formatDateTime = (date: Date) => {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const hour = date.getHours();
+  const minute = date.getMinutes();
+  const second = date.getSeconds();
+
+  return (
+    [year, month, day].map(formatNum).join('-') +
+    ' ' +
+    [hour, minute, second].map(formatNum).join(':')
+  );
+};
+
 /**
  * 数组去重
  */
@@ -25,6 +67,31 @@ export const clean = (elements: Array<string | number>) => {
   return elements.filter((element) => !!element);
 };
 
+/**
+ * toFixed 解决js精度问题，使用方式：toFixed(value)
+ * @param {Number | String} value
+ * @param {Number} precision 精度，默认2位小数，需要取整则传0
+ * 该方法会处理好以下这些问题
+ * 1.12*100=112.00000000000001
+ * 1.13*100=112.9999999999999
+ * '0.015'.toFixed(2)结果位0.01
+ * 1121.1/100 = 11.210999999999999
+ */
+export const toFixed = (value = 0, precision = 2) => {
+  const num = Number(value);
+  if (Number.isNaN(num)) return 0;
+  if (num < Math.pow(-2, 31) || num > Math.pow(2, 31) - 1) {
+    return 0;
+  }
+  // console.log(num, precision)
+  if (precision < 0 || typeof precision !== 'number') {
+    return value;
+  } else if (precision > 0) {
+    return Math.round(num * Math.pow(10, precision)) / Math.pow(10, precision);
+  }
+  return Math.round(num);
+};
+
 export const isStockTime = () => {
   let stockTime = [9, 15];
   const date = new Date();
@@ -34,16 +101,41 @@ export const isStockTime = () => {
   return (hours >= stockTime[0] && hours <= stockTime[1]) || delay;
 };
 
+export const calcFixedPirceNumber = (
+  open: string,
+  yestclose: string,
+  price: string,
+  high: string,
+  low: string
+): number => {
+  let reg = /0+$/g;
+  open = open.replace(reg, '');
+  yestclose = yestclose.replace(reg, '');
+  price = price.replace(reg, '');
+  high = high.replace(reg, '');
+  low = low.replace(reg, '');
+  let o = open.indexOf('.') === -1 ? 0 : open.length - open.indexOf('.') - 1;
+  let yc = yestclose.indexOf('.') === -1 ? 0 : yestclose.length - yestclose.indexOf('.') - 1;
+  let p = price.indexOf('.') === -1 ? 0 : price.length - price.indexOf('.') - 1;
+  let h = high.indexOf('.') === -1 ? 0 : high.length - high.indexOf('.') - 1;
+  let l = low.indexOf('.') === -1 ? 0 : low.length - low.indexOf('.') - 1;
+  let max = Math.max(o, yc, p, h, l);
+  if (max > 3) {
+    max = 2; // 接口返回的指数数值的小数位为4，但习惯两位小数
+  }
+  return max;
+};
+
 export const formatNumber = (val: number = 0, fixed: number = 2, format = true): string => {
   const num = +val;
   if (format) {
     if (num > 1000 * 10000) {
-      return +(num / (10000 * 10000)).toFixed(fixed) + '亿';
+      return (num / (10000 * 10000)).toFixed(fixed) + '亿';
     } else if (num > 1000) {
-      return +(num / 10000).toFixed(fixed) + '万';
+      return (num / 10000).toFixed(fixed) + '万';
     }
   }
-  return `${+num.toFixed(fixed)}`;
+  return `${num.toFixed(fixed)}`;
 };
 
 export const sortData = (data: LeekTreeItem[] = [], order = SortType.NORMAL) => {
@@ -62,10 +154,14 @@ export const sortData = (data: LeekTreeItem[] = [], order = SortType.NORMAL) => 
   }
 };
 
-export const formatTreeText = (text = '', num = 10) => {
+export const formatTreeText = (text = '', num = 10): string => {
   const str = text + '';
   const lenx = num - str.length;
   return str + ' '.repeat(lenx);
+};
+
+export const caculateEarnings = (money: number, price: number, currentPrice: number): number => {
+  return (money / price) * currentPrice - money;
 };
 
 export const colorOptionList = (): QuickPickItem[] => {
@@ -167,98 +263,32 @@ export const randHeader = () => {
   return result;
 };
 
-export const fundRankHtmlTemp = (list: any[] = []) => {
-  let tbody = '';
-  const thead = `
-  <thead><tr ><th class="colorize">序号</th><th class="colorize">基金代码</th><th class="colorize">基金名称</th><th class="r_20 colorize">单位净值</th><th class="r_20 colorize">累计净值</th><th class="r_20">近三个月(%)</th><th class="r_20">近六个月(%)</th><th class=" r_20">近一年(%)</th><th class="sort_down r_20">今年以来(%)</th><th class=" r_20">成立以来(%)</th></tr></thead>`;
-  for (let i = 0; i < list.length; i++) {
-    const item = list[i];
-    const {
-      symbol,
-      name,
-      three_month,
-      six_month,
-      one_year,
-      form_year,
-      form_start,
-      dwjz,
-      ljjz,
-    } = item;
-    tbody += `<tr class="red">
-    <td class="colorize">${i + 1}</td>
-    <td class="colorize"><a href="http://biz.finance.sina.com.cn/suggest/lookup_n.php?q=${symbol}&amp;country=fund" target="_blank">${symbol}</a></td>
-    <td class="colorize"><a href="http://biz.finance.sina.com.cn/suggest/lookup_n.php?q=${symbol}&amp;country=fund" target="_blank" title="${name}" class="name">${name}</a></td>
-    <td class="r_20 colorize">${dwjz}</td>
-    <td class="r_20 colorize">${ljjz}</td>
-    <td class="r_20">${three_month}</td>
-    <td class="r_20">${six_month}</td>
-    <td class="r_20">${one_year}</td>
-    <td class="r_20 sort_down r_20">${form_year}</td>
-    <td class="r_20">${form_start}</td>
-    </tr>`;
-  }
-
-  return `<table boder="0">${thead}<tbody>${tbody} </tbody></table>`;
-};
-
-export const xuqiuArticleTemp = (newsList = [], hideAvatar = false) => {
-  const htmlArr = [];
-  for (let article of newsList) {
-    const info = article as any;
-    info.userId = info.user.id;
-    const images = info.user.profile_image_url.split(',');
-    const img = `https:${info.user.photo_domain}${images[images.length - 1]}`;
-    const description = info.description.replace(/\/\/assets/g, 'https://assets');
-
-    let articleStr = `
-    <article class="timeline__item">
-        ${
-          hideAvatar
-            ? ''
-            : `<a
-        href="https://xueqiu.com/${info.userId}"
-        target="_blank"
-        data-tooltip="${info.userId}"
-        class="avatar avatar-md"
-        ><img
-          src="${img}"
-      /></a>`
-        }
-        <div class="timeline__item__top__right"></div>
-        <div class="timeline__item__main" ${hideAvatar ? 'style="margin-left:0;"' : ''}>
-          <div class="timeline__item__info">
-            <div>
-              <a
-                href="https://xueqiu.com/${info.userId}"
-                target="_blank"
-                data-tooltip="${info.userId}"
-                class="user-name"
-                >${info.user.screen_name}</a
-              >
-            </div>
-            <a
-              href="https://xueqiu.com/${info.userId}/${info.id}"
-              target="_blank"
-              data-id="157971116"
-              class="date-and-source"
-              >${info.timeBefore} · 来自${info.source}</a
-            >
-          </div>
-          <div class="timeline__item__bd">
-            <div class="timeline__item__content">
-              <!---->
-              <div class="content content--description">
-                <!---->
-                <div class="">
-                  ${description}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </article>
-      `;
-    htmlArr.push(articleStr);
-  }
-  return htmlArr;
-};
+/**
+ * 从某个HTML文件读取能被 WebView 加载的HTML内容
+ * @param {*} context 上下文
+ * @param {*} templatePath 相对于插件根目录的html文件相对路径
+ */
+export function getWebViewContent(context: ExtensionContext, templatePath: string) {
+  const resourcePath = path.join(context.extensionPath, templatePath);
+  console.log(templatePath, resourcePath);
+  const dirPath = path.dirname(resourcePath);
+  let html = fs.readFileSync(resourcePath, 'utf-8');
+  // vscode不支持直接加载本地资源，需要替换成其专有路径格式，这里只是简单的将样式和JS的路径替换
+  html = html.replace(
+    /(<link.+?href="|<script.+?src="|<img.+?src=")(.+?)"/g,
+    (m: any, $1: any, $2: any) => {
+      // 本地资源更换为 Uri 文件读取
+      if ($2.includes('http') === -1) {
+        return (
+          $1 +
+          Uri.file(path.resolve(dirPath, $2)).with({ scheme: 'vscode-resource' }).toString() +
+          '"'
+        );
+      } else {
+        // 外链资源不动
+        return $1 + $2 + `"`;
+      }
+    }
+  );
+  return html;
+}
